@@ -1,0 +1,21 @@
+{
+  "name": "outrank-backend-sst",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild --bundle --outfile=./dist/index.js --platform=node --target=node20 ./src/index.ts",
+    "deploy": "run-s build zip update",
+    "update": "aws lambda update-function-code --zip-file fileb://lambda.zip --function-name hello",
+    "zip": "zip -j lambda.zip dist/index.js"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.797.0",
+    "@types/aws-lambda": "8.10.149",
+    "@types/node": "^22.15.2",
+    "esbuild": "^0.21.4",
+    "npm-run-all2": "^6.2.0"
+  },
+  "dependencies": {
+    "hono": "^4.7.7",
+    "sst": "3.13.19"
+  }
+}
