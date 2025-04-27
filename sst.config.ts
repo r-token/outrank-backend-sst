@@ -1,5 +1,6 @@
 /// <reference path="./.sst/platform/config.d.ts" />
 
+// SST Config
 export default $config({
   app(input) {
     return {
@@ -22,10 +23,52 @@ export default $config({
         StatDateTeamIndex: {
           hashKey: "GSI1PK",
           rangeKey: "GSI1SK",
-          projection: "all" // This will include all attributes in the index
+          projection: "all"
         }
       }
     })
+
+    // MARK: SCRAPER
+
+    // Single stat scraper function
+    const scrapeSingleStat = new sst.aws.Function("ScrapeSingleStat", {
+      url: true,
+      link: [allRankingsTable],
+      handler: "src/scraper/scrapeSingleStat.handler",
+      memory: "2 GB",
+      timeout: "1 minute",
+      nodejs: {
+        install: ["@sparticuz/chromium"]
+      },
+      permissions: [
+        {
+          actions: ["ses:SendEmail"],
+          resources: ["*"]
+        }
+      ]
+    });
+
+    // Step Functions state machine for orchestration
+    const scraperStateMachine = new sst.aws.Function("ScraperStateMachine", {
+      url: true,
+      link: [allRankingsTable, scrapeSingleStat],
+      handler: "src/scraper/orchestrator.handler",
+      timeout: "15 minutes",
+      permissions: [
+        {
+          actions: ["lambda:InvokeFunction", "ses:SendEmail"],
+          resources: ["*"]
+        }
+      ]
+    });
+
+    // EventBridge rule to trigger daily scraping
+    new sst.aws.Cron("DailyScraperTrigger", {
+      schedule: "cron(0 15 * * ? *)", // 3 PM UTC daily
+      job: scraperStateMachine.arn
+    });
+
+    // MARK: API
 
     new sst.aws.Function("getSingleTeamStats", {
       url: true,
@@ -43,6 +86,21 @@ export default $config({
       url: true,
       link: [allRankingsTable],
       handler: "src/api/getTeamHistoricalStats.handler"
+    });
+
+    // MARK: MIGRATION
+    new sst.aws.Function("MigrateHistoricalData", {
+      handler: "src/migration/migrateHistoricalDataTable.handler",
+      timeout: "15 minutes",
+      environment: {
+        NEW_TABLE_NAME: allRankingsTable.name
+      },
+      permissions: [
+        {
+          actions: ["dynamodb:Scan", "dynamodb:BatchWriteItem"],
+          resources: ["*"]
+        }
+      ]
     });
   }
 })

@@ -9,6 +9,20 @@ declare module "sst" {
       "name": string
       "type": "sst.aws.Dynamo"
     }
+    "MigrateHistoricalData": {
+      "name": string
+      "type": "sst.aws.Function"
+    }
+    "ScrapeSingleStat": {
+      "name": string
+      "type": "sst.aws.Function"
+      "url": string
+    }
+    "ScraperStateMachine": {
+      "name": string
+      "type": "sst.aws.Function"
+      "url": string
+    }
     "getSingleTeamStats": {
       "name": string
       "type": "sst.aws.Function"
