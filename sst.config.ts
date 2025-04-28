@@ -64,7 +64,7 @@ export default $config({
 
     // EventBridge rule to trigger daily scraping
     new sst.aws.Cron("DailyScraperTrigger", {
-      schedule: "cron(0 15 * * ? *)", // 3 PM UTC daily
+      schedule: "cron(0 14 * * ? *)", // 2 PM UTC, 8 AM MDT
       job: scraperStateMachine.arn
     });
 
@@ -82,10 +82,10 @@ export default $config({
       handler: "src/api/getStatsByTeam.handler"
     });
 
-    new sst.aws.Function("getTeamHistoricalStats", {
+    new sst.aws.Function("getSingleTeamHistoricalStats", {
       url: true,
       link: [allRankingsTable],
-      handler: "src/api/getTeamHistoricalStats.handler"
+      handler: "src/api/getSingleTeamHistoricalStats.handler"
     });
 
     // MARK: MIGRATION

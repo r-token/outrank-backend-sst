@@ -23,17 +23,17 @@ declare module "sst" {
       "type": "sst.aws.Function"
       "url": string
     }
+    "getSingleTeamHistoricalStats": {
+      "name": string
+      "type": "sst.aws.Function"
+      "url": string
+    }
     "getSingleTeamStats": {
       "name": string
       "type": "sst.aws.Function"
       "url": string
     }
     "getStatsByTeam": {
-      "name": string
-      "type": "sst.aws.Function"
-      "url": string
-    }
-    "getTeamHistoricalStats": {
       "name": string
       "type": "sst.aws.Function"
       "url": string

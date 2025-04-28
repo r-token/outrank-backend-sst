@@ -1,4 +1,4 @@
-// src/api/getTeamHistoricalStats.ts
+// src/api/getSingleTeamHistoricalStats.ts
 import { Hono } from 'hono'
 import { Resource } from "sst";
 import { DynamoDBClient, QueryCommand } from '@aws-sdk/client-dynamodb'
