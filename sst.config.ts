@@ -87,20 +87,5 @@ export default $config({
       link: [allRankingsTable],
       handler: "src/api/getSingleTeamHistoricalStats.handler"
     });
-
-    // MARK: MIGRATION
-    new sst.aws.Function("MigrateHistoricalData", {
-      handler: "src/migration/migrateHistoricalDataTable.handler",
-      timeout: "15 minutes",
-      environment: {
-        NEW_TABLE_NAME: allRankingsTable.name
-      },
-      permissions: [
-        {
-          actions: ["dynamodb:Scan", "dynamodb:BatchWriteItem"],
-          resources: ["*"]
-        }
-      ]
-    });
   }
 })

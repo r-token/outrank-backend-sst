@@ -1,13 +1,12 @@
-// src/migration/migrateHistoricalData.ts
-import { DynamoDBClient, ScanCommand, ScanCommandInput, ScanCommandOutput, AttributeValue } from '@aws-sdk/client-dynamodb'
-import { DynamoDBDocumentClient, BatchWriteCommand } from '@aws-sdk/lib-dynamodb'
-import { Handler } from 'aws-lambda';
+// scripts/migrate.mjs - ES module version
+import { DynamoDBClient, ScanCommand } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, BatchWriteCommand } from '@aws-sdk/lib-dynamodb';
 
-const client = new DynamoDBClient({})
-const ddbDocClient = DynamoDBDocumentClient.from(client)
+const client = new DynamoDBClient({});
+const ddbDocClient = DynamoDBDocumentClient.from(client);
 
 // This is the inverse of your convertStatToDbAttribute function
-const dbAttributeToStat: Record<string, string> = {
+const dbAttributeToStat = {
   'ThirdDownConversionPct': '3rd Down Conversion Pct',
   'ThirdDownConversionPctDefense': '3rd Down Conversion Pct Defense',
   'FourthDownConversionPct': '4th Down Conversion Pct',
@@ -57,26 +56,56 @@ const dbAttributeToStat: Record<string, string> = {
   'WinningPercentage': 'Winning Percentage'
 };
 
-export const handler: Handler = async () => {
-  const OLD_TABLE_NAME = 'historicalRankingsTable';
-  const NEW_TABLE_NAME = process.env.NEW_TABLE_NAME || 'AllRankings';
+async function migrateData() {
+  // Get table names from command line args or use defaults
+  const args = process.argv.slice(2);
+  const OLD_TABLE_NAME = args[0] || 'historicalRankingsTable';
+  const NEW_TABLE_NAME = args[1] || 'AllRankings';
+  
+  console.log(`Starting migration from ${OLD_TABLE_NAME} to ${NEW_TABLE_NAME}`);
+  
+  // First, check if tables exist
+  try {
+    // Attempt to scan with limit 1 to check if table exists
+    await client.send(new ScanCommand({
+      TableName: OLD_TABLE_NAME,
+      Limit: 1
+    }));
+    
+    await client.send(new ScanCommand({
+      TableName: NEW_TABLE_NAME,
+      Limit: 1
+    }));
+    
+    console.log("Both source and destination tables exist. Proceeding with migration...");
+  } catch (error) {
+    console.error("Error checking tables:", error.message);
+    console.log("\nPossible issues:");
+    console.log("1. One or both tables don't exist");
+    console.log("2. AWS credentials are not configured correctly");
+    console.log("3. You're not running in the correct AWS region");
+    console.log("\nTo fix:");
+    console.log("- Make sure both tables exist in your AWS account");
+    console.log("- Run 'aws configure' to set up your credentials");
+    console.log("- Check that you're using the correct table names");
+    console.log("- If using SST dev, make sure 'sst dev' is running");
+    process.exit(1);
+  }
   
   try {
-    console.log('Starting migration from historicalRankingsTable to AllRankings');
-    
-    let lastEvaluatedKey: Record<string, AttributeValue> | undefined;
+    let lastEvaluatedKey = undefined;
     let totalItemsProcessed = 0;
     let batchCount = 0;
     
     do {
       // Scan old table
-      const scanParams: ScanCommandInput = {
+      const scanParams = {
         TableName: OLD_TABLE_NAME,
         ExclusiveStartKey: lastEvaluatedKey,
         Limit: 100 // Process in smaller batches to avoid timeouts
       };
       
-      const scanResult: ScanCommandOutput = await client.send(new ScanCommand(scanParams));
+      const scanResult = await client.send(new ScanCommand(scanParams));
       
       if (!scanResult.Items || scanResult.Items.length === 0) {
         console.log('No more items to process');
@@ -114,7 +143,7 @@ export const handler: Handler = async () => {
             PutRequest: {
               Item: {
                 PK: `team#${team}`,
-                SK: `date#${date}`,
+                SK: `date#${date}#stat#${statName}`,
                 stat: statName,
                 value: value,
                 GSI1PK: `stat#${statName}`,
@@ -125,47 +154,57 @@ export const handler: Handler = async () => {
         }
       }
       
-      // Batch write to new table
-      const batchSize = 25;
+      // Batch write to new table with parallelization
+      const batchSize = 25; // DynamoDB maximum batch size
+      const parallelBatches = 10; // Number of batches to process in parallel
+      
+      // Split items into batches of 25 (DynamoDB limit)
+      const batches = [];
       for (let i = 0; i < newItems.length; i += batchSize) {
         const batch = newItems.slice(i, i + batchSize);
-        
-        await ddbDocClient.send(new BatchWriteCommand({
-          RequestItems: {
-            [NEW_TABLE_NAME]: batch
-          }
-        }));
-        
-        batchCount++;
-        console.log(`Processed batch ${batchCount}, items ${i} to ${i + batch.length}`);
+        batches.push(batch);
       }
       
-      totalItemsProcessed += scanResult.Items.length;
+      // Process batches in parallel groups
+      for (let i = 0; i < batches.length; i += parallelBatches) {
+        const batchGroup = batches.slice(i, i + parallelBatches);
+        const batchPromises = batchGroup.map(batch => {
+          return ddbDocClient.send(new BatchWriteCommand({
+            RequestItems: {
+              [NEW_TABLE_NAME]: batch
+            }
+          }));
+        });
+        
+        // Wait for all batches in this group to complete
+        await Promise.all(batchPromises);
+        
+        // Calculate progress metrics
+        const startItem = i * batchSize;
+        const endItem = Math.min((i + batchGroup.length) * batchSize, newItems.length);
+        batchCount += batchGroup.length;
+        
+        // Log progress with correct item ranges
+        console.log(`Batch group ${Math.floor(i/parallelBatches) + 1}: Processed ${batchGroup.length} batches (${batchCount} total)`); 
+        console.log(`Items ${startItem + 1} to ${endItem} of ${newItems.length} (${endItem - startItem} items in this group)`); 
+      }
+      
+      // Update the total items counter with actual items written to DynamoDB
+      const itemsWrittenInThisBatch = newItems.length;
+      totalItemsProcessed += itemsWrittenInThisBatch;
       lastEvaluatedKey = scanResult.LastEvaluatedKey;
       
-      console.log(`Processed ${totalItemsProcessed} items so far...`);
+      console.log(`Scan progress: ${scanResult.Items.length} items scanned in this batch`);
+      console.log(`Migration progress: ${totalItemsProcessed} total items written to DynamoDB so far`);
+      console.log(`---------------------------------------------------------`);
       
     } while (lastEvaluatedKey);
     
     console.log(`Migration complete! Total items processed: ${totalItemsProcessed}`);
-    
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        message: 'Migration completed successfully',
-        totalItemsProcessed,
-        batchCount
-      })
-    };
-    
   } catch (error) {
     console.error('Migration error:', error);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        message: 'Migration failed',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      })
-    };
+    process.exit(1);
   }
-};
+}
+
+migrateData();

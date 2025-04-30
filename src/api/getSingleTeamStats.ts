@@ -45,7 +45,8 @@ app.get('/', async (c) => {
     
     // Extract the latest date
     const latestItem = dateResult.Items[0] as DynamoDBStatItem
-    const latestDate = latestItem.SK?.S?.split('#')[1] || ''
+    const skParts = latestItem.SK?.S?.split('#') || []
+    const latestDate = skParts.length > 1 ? skParts[1] : ''
     
     // Now get all stats for this specific date
     const results = await client.send(new QueryCommand({

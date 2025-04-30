@@ -36,11 +36,13 @@ app.get('/', async (c) => {
   try {
     const results = await client.send(new QueryCommand({
       TableName: Resource.AllRankings.name,
-      KeyConditionExpression: "PK = :pk and SK BETWEEN :startSk AND :endSk",
+      KeyConditionExpression: "PK = :pk and begins_with(SK, :skPrefix)",
+      FilterExpression: "SK between :startSk and :endSk",
       ExpressionAttributeValues: {
         ":pk": { S: `team#${team}` },
+        ":skPrefix": { S: "date#" },
         ":startSk": { S: `date#${startDate}` },
-        ":endSk": { S: `date#${endDate}` }
+        ":endSk": { S: `date#${endDate}#zzz` }
       }
     }))
     
@@ -53,7 +55,8 @@ app.get('/', async (c) => {
     
     results.Items.forEach((item: DynamoDBStatItem) => {
       if (item.SK?.S && item.stat?.S && item.value?.N) {
-        const dateStr = item.SK.S.split('#')[1] || ''
+        const skParts = item.SK.S.split('#')
+        const dateStr = skParts.length > 1 ? skParts[1] : ''
         
         if (!statsByDate[dateStr]) {
           statsByDate[dateStr] = {}
